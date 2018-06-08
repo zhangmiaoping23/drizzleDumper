@@ -5,6 +5,10 @@
 
 #include "drizzleDumper.h"
 
+// proc/pid/cmdline Æô¶¯Ê±Ïà¹Ø
+// /proc/pid/task ×ÓÏß³Ì 
+// /proc/pid/mem ½ø³Ì³ÖÓĞµÄÄÚ´æ£¬²»¿É¶Á 
+// /proc/pid/maps ÄÚ´æÓ³Éä 
 int main(int argc, char *argv[]) {
 
   printf("[>>>]  This is drizzleDumper [<<<]\n");
@@ -58,7 +62,7 @@ int main(int argc, char *argv[]) {
 	  }
 	  printf("[*]  pid is %d\n", pid);
 
-    //find cloned process
+    //find cloned process(the last dir of /proc/pid/task) 
 	  clone_pid = get_clone_pid(pid);
 	  if(clone_pid <= 0) 
 	  {
@@ -72,14 +76,17 @@ int main(int argc, char *argv[]) {
        	  mem_file = attach_get_memory(clone_pid);
 	  if(mem_file == -10201) 
 	  {
+	    //ptrace failed,other errors
 	    continue;
 	  }
 	  else if(mem_file == -20402)
 	  {
+	     //proc/pid/mem open error
 	     //continue;
 	  }
 	  else if(mem_file == -30903)
 	  {
+	     //ptrace failed,can't ptrace
 	     //continue
 	  }
 	
@@ -94,7 +101,7 @@ int main(int argc, char *argv[]) {
 	    printf("[*]  The magic was Not Found!\n");
             ptrace(PTRACE_DETACH, clone_pid, NULL, 0);
             close(mem_file);
-	    continue;
+            continue;
 	  }
 	  else
 	  {
@@ -102,8 +109,8 @@ int main(int argc, char *argv[]) {
          * Successed & exit
          */
          close(mem_file);
-	 ptrace(PTRACE_DETACH, clone_pid, NULL, 0);
-	 break;
+         ptrace(PTRACE_DETACH, clone_pid, NULL, 0);
+         break;
 	  }
    }
 
@@ -155,7 +162,7 @@ uint32_t get_process_pid(const char *target_package_name)
     if (directory_entry == NULL)
       return -1;
 
-    if (strcmp(directory_entry->d_name, "self") == 0 || strcmp(directory_entry->d_name, self_pid) == 0)
+    if ((strcmp(directory_entry->d_name, "self") == 0) || (strcmp(directory_entry->d_name, self_pid) == 0))
         continue;
 
       char cmdline[1024];
@@ -192,6 +199,7 @@ int find_magic_memory(uint32_t clone_pid, int memory_fd, memory_region *memory ,
   }
 
    char mem_line[1024];
+   //12c00000-12e01000 r--p 00000000 00:04 8555                               /dev/ashmem/dalvik-main space (deleted)
    while(fscanf(maps_file, "%[^\n]\n", mem_line) >= 0)
    {
     char mem_address_start[10]={0};
@@ -219,34 +227,43 @@ int find_magic_memory(uint32_t clone_pid, int memory_fd, memory_region *memory ,
 	  char randstr[10] = {0};
 	  sprintf(randstr ,"%d", rand()%9999 );
 
-	  strncpy(each_filename , file_name , 200);	//é˜²æº¢å‡º
+	  strncpy(each_filename , file_name , 200);
 	  strncat(each_filename , randstr , 10);
 	  strncat(each_filename , ".dex" , 4);
+	  lseek64(memory_fd,0,SEEK_SET);
+	  off_t r1 = lseek64(memory_fd , memory->start , SEEK_SET);
+	  if(r1 == -1)
+	  {
+		 //do nothing
+	  }
+	  else
+	  {
+		char *buffer = malloc(len);
+	 	ssize_t readlen = read(memory_fd, buffer, len);
+		printf("meminfo: %s ,len: %d ,readlen: %d, start: 0x%x\n",mem_info, len, readlen, memory->start);
+		
+		//Êµ¼Ê²âÊÔÇé¿öµÄÄÚ´æÇé¿ö
+		// /system/framework/core.odex  
+		// /data/dalvik-cache/data@data@de.robv.android.xposed.installer@bin@XposedBridge.jar@classes.dex
+		// /data/dalvik-cache/data@app@com.appstore-1.apk@classes.dex
+		// ¾ùÎª dey 036
+		
+		//00000000   7F 45 4C 46                                        .ELF
+		if(buffer[1] == 'E' && buffer[2] == 'L' && buffer[3] == 'F')
+		{
+			free(buffer);
 
-	   lseek64(memory_fd , 0 , SEEK_SET);	//ä¿é™©ï¼Œå…ˆå½’é›¶
-	   off_t r1 = lseek64(memory_fd , memory->start , SEEK_SET);
-	   if(r1 == -1)
-	   {
-		   //do nothing
-	   }
-	   else
-	   {
-		  char *buffer = malloc(len);
-	 	  ssize_t readlen = read(memory_fd, buffer, len);
-      printf("meminfo: %s ,len: %d ,readlen: %d, start: %x\n",mem_info, len, readlen, memory->start);
-      if(buffer[1] == 'E' && buffer[2] == 'L' && buffer[3] == 'F')
-      {
-        free(buffer);
-
-        continue;
-      }
-     if(buffer[0] == 'd' && buffer[1] == 'e' && buffer[2] == 'x' && buffer[3] == '\n'  && buffer[4] == '0' && buffer[5] == '3')
-      {
-			  printf(" [+] find dex, len : %d , info : %s\n" , readlen , mem_info);
+			continue;
+		}
+		
+		//00000000   64 65 78 0A 30 33 35 00                            dex.035.
+		if(buffer[0] == 'd' && buffer[1] == 'e' && buffer[2] == 'x' && buffer[3] == '\n'  && buffer[4] == '0' && buffer[5] == '3')
+		{
+			  printf(" [+] find dex, start : %d(0x%x), end %d(0x%x),memory len : %d , info : %s\n" , memory->start,memory->start,memory->end,memory->end,readlen , mem_info);
 			  DexHeader header;
 			  char real_lenstr[10]={0};
 			  memcpy(&header , buffer ,sizeof(DexHeader));
-			  sprintf(real_lenstr , "%x" , header.fileSize);
+			  sprintf(real_lenstr , "0x%x" , header.fileSize);		//×¢Òâ¹Û²ìÎÄ¼ş´óĞ¡ÊÇ·ñ³¬¹ıÄÚ´æ¿é¡£ÕâÀï¿ÉÄÜĞèÒª¸ù¾İÊµ¼ÊÎÄ¼ş´óĞ¡£¬ÖØĞÂ¶¨Î»
 			  long real_lennum = strtol(real_lenstr , NULL, 16);
 			  printf(" [+] This dex's fileSize: %d\n", real_lennum);
 
@@ -255,20 +272,22 @@ int find_magic_memory(uint32_t clone_pid, int memory_fd, memory_region *memory ,
 			  {
 			          printf(" [+] dex dump into %s\n", each_filename);
 			          free(buffer);
-			          continue;
+			          //continue; ÕÒµ½²»ĞèÒª¼ÌĞø²éÕÒ,²Â²âÕâÀï¿ÉÄÜÊÇÎªÁËmulti-dexµÄÖ§³Ö£¬ºóÆÚ»òĞí¿¼ÂÇÓÃmax_dex_count
+			          ret = 1;
+			          break;
 			  }
 			  else
 			  {
 			  	 printf(" [+] dex dump error \n");
 			  }
 
-	 	  }
-		    free(buffer);
+	 	}
+		free(buffer);
 	   }
 
 
-	   lseek64(memory_fd , 0 , SEEK_SET);	//ä¿é™©ï¼Œå…ˆå½’é›¶
-	   r1 = lseek64(memory_fd , memory->start + 8 , SEEK_SET);//ä¸ç”¨ preadï¼Œå› ä¸ºpreadç”¨çš„æ˜¯lseek
+	   lseek64(memory_fd , 0 , SEEK_SET);	
+	   r1 = lseek64(memory_fd , memory->start + 8 , SEEK_SET);
 	   if(r1 == -1)
 	   {
 		   continue;
@@ -280,19 +299,21 @@ int find_magic_memory(uint32_t clone_pid, int memory_fd, memory_region *memory ,
 
 		  if(buffer[0] == 'd' && buffer[1] == 'e' && buffer[2] == 'x' && buffer[3] == '\n'  && buffer[4] == '0' && buffer[5] == '3')
 	 	  {
-			  printf(" [+] Find dex! memory len : %d \n" , readlen);
+			  printf(" [+] find dex, start : %d(0x%x), end %d(0x%x),memory len : %d , info : %s\n" , memory->start,memory->start,memory->end,memory->end,readlen , mem_info);
 			  DexHeader header;
 			  char real_lenstr[10]={0};
 			  memcpy(&header , buffer ,sizeof(DexHeader));
-			  sprintf(real_lenstr , "%x" , header.fileSize);
+			  sprintf(real_lenstr , "0x%x" , header.fileSize);
 			  long real_lennum = strtol(real_lenstr , NULL, 16);
 			  printf(" [+] This dex's fileSize: %d\n", real_lennum);
 
 	  		if(dump_memory(buffer , len , each_filename)  == 1)
 			  {
-                                  printf(" [+] dex dump into %s\n", each_filename);
+                  printf(" [+] dex dump into %s\n", each_filename);
 				  free(buffer);
-                                  continue;	//å¦‚æœæœ¬æ¬¡æˆåŠŸäº†ï¼Œå°±ä¸å°è¯•å…¶ä»–æ–¹æ³•äº†
+				  //continue; ÕÒµ½²»ĞèÒª¼ÌĞø²éÕÒ£¬²Â²âÕâÀï¿ÉÄÜÊÇÎªÁËmulti-dexµÄÖ§³Ö£¬ºóÆÚ»òĞí¿¼ÂÇÓÃmax_dex_count
+				  ret = 1;
+				  break;
 			  }
 			  else
 			  {
@@ -326,7 +347,7 @@ int dump_memory(const char *buffer , int len , char each_filename[])
  	return ret;
 }
 
-// Perform all that ptrace magic
+// Perform all that ptrace magic,to get the mem of the pid
 int attach_get_memory(uint32_t pid) {
   char mem[1024];
   bzero(mem,1024);
@@ -338,22 +359,23 @@ int attach_get_memory(uint32_t pid) {
   int mem_file;
 
   if (0 != ret)
-  {
-	  int err = errno;	//è¿™æ—¶è·å–errno
+  {	  //ptrace eeor 
+	  int err = errno;	
 	  if(err == 1) //EPERM
 	  {
-		  return -30903;	//ä»£è¡¨å·²ç»è¢«è·Ÿè¸ªæˆ–æ— æ³•è·Ÿè¸ª
+		  return -30903;	//have been ptraced or can't trace
 	  }
 	  else
 	  {
-		  return -10201;	//å…¶ä»–é”™è¯¯(è¿›ç¨‹ä¸å­˜åœ¨æˆ–éæ³•æ“ä½œ)
+		  return -10201;	//other errors(process can't be found or illegal operation)
 	  }
   }
   else
-  {
+  {	  
+	  //ptrace success
 	  if(!(mem_file = open(mem, O_RDONLY)))
 	  {
-	    return -20402;  	//æ‰“å¼€é”™è¯¯
+	    return -20402;  	//open error
 	  }
   }
   return mem_file;

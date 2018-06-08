@@ -1,0 +1,6 @@
+root@hammerhead:/data/local/tmp # dd if=/proc/10339/mem of=/data/local/tmp/out.dex ibs=1 obs=1 count=11292672 skip=1988714496
+
+11292672+0 records in
+11292672+0 records out
+11292672 bytes transferred in 365.328 secs (30911 bytes/sec)
+可以看出dump的时间比较长
