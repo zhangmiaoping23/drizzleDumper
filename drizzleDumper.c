@@ -5,10 +5,12 @@
 
 #include "drizzleDumper.h"
 
+// 只支持dalvik虚拟机
 // proc/pid/cmdline 启动时相关
 // /proc/pid/task 子线程 
 // /proc/pid/mem 进程持有的内存，不可读 
 // /proc/pid/maps 内存映射 
+// 未加壳的APP是找不到.dex的
 int main(int argc, char *argv[]) {
 
   printf("[>>>]  This is drizzleDumper [<<<]\n");
@@ -266,7 +268,7 @@ int find_magic_memory(uint32_t clone_pid, int memory_fd, memory_region *memory ,
 			  sprintf(real_lenstr , "0x%x" , header.fileSize);		//注意观察文件大小是否超过内存块。这里可能需要根据实际文件大小，重新定位
 			  long real_lennum = strtol(real_lenstr , NULL, 16);
 			  printf(" [+] This dex's fileSize: %d\n", real_lennum);
-
+			  printf(" [+] notice that this dex's fileSize(%d) is over than the memory size(%d)\n", real_lennum,readlen);	  
 
 	  		if(dump_memory(buffer , len , each_filename)  == 1)
 			  {
