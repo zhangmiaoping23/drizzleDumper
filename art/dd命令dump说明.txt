@@ -1,0 +1,10 @@
+oppo 5.1 64Î»»úÆ÷
+
+dd if=/proc/10019/mem of=/data/local/tmp/com.pleasure.trace_wechat_drizzle.dex ibs=1 obs=1 count=4165632 skip=547183927296
+
+dd if=/proc/10019/mem of=/data/local/tmp/com.pleasure.trace_wechat_drizzle_shell ibs=1 obs=1 count=1339392 skip=547204337664
+
+7f66b42000-7f66f3b000 rw-p 00000000 103:00 221941                        /data/data/com.pleasure.trace_wechat/files/prodexdir/00O000ll111l_0.dex
+7f67eb9000-7f67f3e000 r--p 00000000 103:00 3375568                       /data/dalvik-cache/arm64/data@app@com.pleasure.trace_wechat-1@base.apk@classes.dex
+7f67f3e000-7f67fff000 r-xp 00085000 103:00 3375568                       /data/dalvik-cache/arm64/data@app@com.pleasure.trace_wechat-1@base.apk@classes.dex
+7f67fff000-7f68000000 rw-p 00146000 103:00 3375568                       /data/dalvik-cache/arm64/data@app@com.pleasure.trace_wechat-1@base.apk@classes.dex
